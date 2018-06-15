@@ -1,0 +1,4 @@
+Library.ISSFile: libANISS.so
+Library.ISSBuffer: libANISS.so
+Library.ISSWord: libANISS.so
+Library.ISSHit: libANISS.so
