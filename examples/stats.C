@@ -21,12 +21,15 @@
 
 // Histograms
 TH1I *hStats, *hstatQLong, *hstatQShort;
-TH1F *hQLong[MAXID], *hQShort[MAXID];
+TH1F *hQLong[MAXID], *hQShort[MAXID], *hglobalTSdiff, *hADCTSdiff;
 TRandom *fRand = new TRandom();
 
-// Timestamps
-ULong64_t first_adc_ts = 0, first_global_ts = 0, last_adc_ts, last_global_ts;
-ULong64_t n_ebis_pulses = 0, n_info=0, n_adc =0, n_word=0, n_qlong=0, n_qshort=0, n_finetime=0, n_traces=0, n_adc_ts=0, n_global_ts=0;
+// Timestamps and statistics
+ULong64_t first_adc_ts = 0, first_global_ts = 0, last_adc8_ts, last_adc16_ts,
+          last_global_ts, prev_global_ts=0, prev_adc8_ts=0, prev_adc16_ts=0, 
+          global_diff=0, adc_diff=0;
+ULong64_t n_ebis_pulses = 0, n_info=0, n_adc =0, n_word=0, n_qlong=0, n_qshort=0, 
+          n_finetime=0, n_traces=0, n_adc_ts=0, n_global_ts=0;
 
 
 
@@ -38,17 +41,29 @@ void treat_word(ISSWord *w) {
     
     // If it has an extended timestamp get the timestamp
     if (w->HasExtendedTimestamp()) {
-          if (63 == w->GetInfoModule()) {
-                last_global_ts = w->GetFullGlobalTimestamp();
-                n_global_ts++;
-            }
-          else {
-                last_adc_ts = w->GetFullADCTimestamp();
-                n_adc_ts++;
-                }          
+        if (63 == w->GetInfoModule()) {
+            prev_global_ts = last_global_ts;
+            last_global_ts = w->GetFullGlobalTimestamp();
+            if (last_global_ts < prev_global_ts) printf("ERROR: New TS < old TS");
+            global_diff = last_global_ts - prev_global_ts;
+            n_global_ts++;
+        } else if ( 2 > w->GetInfoModule() ) {
+            prev_adc8_ts = last_adc8_ts;
+            last_adc8_ts = w->GetFullADCTimestamp();
+            adc_diff = last_adc8_ts-prev_adc8_ts;
+            hADCTSdiff->Fill(adc_diff*8); // 8 ns resolution in V1725
+            n_adc_ts++;
+        }
+        else {
+          prev_adc16_ts = last_adc16_ts;
+          last_adc16_ts = w->GetFullADCTimestamp();
+          adc_diff = last_adc16_ts-prev_adc16_ts;
+          hADCTSdiff->Fill(adc_diff*16); // 16 ns resolution in V1730
+          n_adc_ts++;
+        }          
     }
         
-    if (!first_adc_ts) first_adc_ts = last_adc_ts;
+    if (!first_adc_ts) first_adc_ts = last_adc8_ts;
     if (!first_global_ts) first_global_ts = last_global_ts;
     
     // For info words get errors
@@ -59,17 +74,14 @@ void treat_word(ISSWord *w) {
         UInt_t module = w->GetInfoModule();
         UInt_t id      = module;
         
-        if (63 == module) n_ebis_pulses++;
+        // TS from V1495 module
+        if (63 == module) {
+            //hglobalTSdiff->AddBinContent(global_diff, 1);
+            hglobalTSdiff->Fill(global_diff*10.e-9);
+            n_ebis_pulses++;            
+        }
         
-        
-        // not for ISS...
-        //if (code == 1) hPileUp->AddBinContent(id, 1);
-        //else if (code == 9) hOverRange->AddBinContent(id, 1);
-        //else if (code == 10) hUnderRange->AddBinContent(id, 1);
-        //else if (code == 11) hOverFlow->AddBinContent(id, 1);
-        //else if (code == 12) hUnderFlow->AddBinContent(id, 1);
-
-        return;
+        return; // info word has been processed
     }
     
     // For ADC words get statistics
@@ -143,18 +155,19 @@ void treat_file(const Char_t *filename) {
 
 //-----------------------------------------------------------------------------
 // Get statistics for a file
-void stats(const Char_t *infile = "../../ISS_R2_8") {
-     
+void stats(const Char_t *infile = "../../ISS_R2_8") {     
      
      // Open output file
     TFile *f = TFile::Open("stats.root", "recreate");
     if (!f) return;
-     
 
     // Create histograms
     hStats        = new TH1I("hStats",     "Total statistics", MAXID, 0, MAXID);
     hstatQLong    = new TH1I("hstatQLong", "QLong statistics", MAXID, 0, MAXID);
     hstatQShort   = new TH1I("hstatQShort","QShort statistics", MAXID, 0, MAXID);
+    
+    hglobalTSdiff = new TH1F("hglobalTSdiff" ,"Difference between trigger timestamps in seconds", 10000, 0, 10);
+    hADCTSdiff    = new TH1F("hADCTSdiff" ,   "Difference between ADC timestamps in ns", 10000, 0, 10000);
     
     for (UInt_t i = 0; i < MAXID; i++) {
       hQLong[i] = new TH1F( Form("hQLong%04d", i) ,"QLong spectrum", 65536, 0, 65536);
