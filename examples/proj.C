@@ -1,14 +1,4 @@
-// Script to generate the projections of a file. For each active channel,
-// it produces a histogram. The binning of the histogram is the raw binning
-// of the Nutaq module, but the bin widths are set according to the
-// calibration. The format of the calibration file is the same as that for
-// grain. i.e. with lines like
-// 32= 1.890477 0.28199703 2.622174E-7 0
-// which means for ID=32 (ID=module*32+channel-1, so this is channel 1 of
-// module 1). The next three parameters are offset, slope and quadratic term
-// of the calibration and the last term is a time offset, which is not used
-// by this code.
-
+// A ROOT script to generate the projections of an ISS data file. 
 #include <vector>
 #include <algorithm>
 
@@ -21,9 +11,10 @@
 #include "ISSFile.hh"
 #include "ISSWord.hh"
 
-#define MAXID 0x1000      // Maximum number of IDs with 12 bits
+//#define MAXID 0x1000   // Maximum number of IDs with 12 bits
+#define MAXID 200   // Maximum number of channel IDs
 
-// Data from calibration file
+// Data from a calibration file
 Double_t calib[MAXID][3]; // Quadratic calibration terms
 Int_t offset[MAXID];      // Time offset in ticks
 
@@ -61,7 +52,7 @@ void Calibrate(TH1 *myh, Double_t cal[3]) {
 //-----------------------------------------------------------------------------
 // Read the calibration file in the grain format.
 void read_calibration(const char *filename = "online.gains") {
-
+   
    TString s;
    FILE *fp;
    Int_t status, id, count = 0;
@@ -73,22 +64,24 @@ void read_calibration(const char *filename = "online.gains") {
 
    printf("Reading calibrations...\r");
    fflush(stdout);
-   while(1) {
    
+   while(1) {
+     
       // Read a line
       if (!s.Gets(fp)) break;
    
       // Parse the line: ID=offset slope quadratic time_offset
-      status = sscanf(s.Data(), "%d=%lf%lf%lf%lf", &id, cal, cal+1, cal+2,
-                      cal+3);
+      status = sscanf(s.Data(), "%d = %lf %lf %lf %lf", &id, cal, cal+1, cal+2,cal+3);
+      //status = sscanf(s.Data(), "%d = %d %d %d %d", &id, cal, cal+1, cal+2,cal+3);
       if (status != 5) continue;
-      if (id < 0 || id >= MAXID) continue;
+      if (id < 0 || id > MAXID) continue;
       count++;
 
       // Store it
       for (Int_t i = 0; i < 3; i++) calib[id][i] = cal[i];
       offset[id] = (Int_t)cal[3];
    }
+   
    printf("Read calibrations for %d channels.\n", count);
    
    // Close the file
@@ -100,16 +93,18 @@ void treat_word(ISSWord *w) {
 
    // Ignore all but ADC words
    if (!w->IsADC()) return;
-   
-   // Ignore pile-up, overrange, underrange, overflow and underflow
-   //if (w->GetADCFail()) return;
 
    // Add to statistics
-   UInt_t id = w->GetADCID();
-   hStats->AddBinContent(id, 1);
+   if(w->IsQLong()) {
+       UInt_t module = w->GetADCModule();
+       UInt_t channel = w->GetADCChannel();
+       UInt_t adc_data = w->GetADCConversion();
+       UInt_t id = 32*module + channel;
+       hStats->AddBinContent(id, 1);
 
-   // Fill projection histogram
-   h[id]->Fill(w->GetADCConversion());
+       // Fill projection histogram
+       h[id]->Fill(adc_data);
+   }
 }
 
 //-----------------------------------------------------------------------------
@@ -152,9 +147,9 @@ void treat_file(const Char_t *filename) {
 
 //-----------------------------------------------------------------------------
 // Generate projections for a file
-void proj(const Char_t *infile = "../ISS_R6_0",
+void proj(const Char_t *infile = "../../data/R21_0",
           const Char_t *outfile = "proj.root",
-          const Char_t *calname = "online.gains") {
+          const Char_t *calname = "./online.gains") {
 
    // Read the calibration
    read_calibration(calname);
