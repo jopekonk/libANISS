@@ -3,7 +3,6 @@
 // from the V1495 logic unit. Time orders the adc items within the event.
 // Joonas Konki - 20180617
 //
-// TODO: add writing to root tree
 // TODO: treat last bunch of data items in a block properly if there is no
 //       EBIS trigger following the last adc data words (?)
 //
@@ -51,7 +50,7 @@ TH1I *hStats, *hstatQLong, *hstatQShort;
 TRandom *fRand = new TRandom();
 
 // Timestamps and statistics
-ULong64_t first_adc8_ts = 0, first_global_ts=0, last_adc8_ts, last_adc16_ts,
+ULong64_t first_adc8_ts = 0, first_global_ts=0, last_adc8_ts=0, last_adc16_ts=0,
           last_global_ts = 0, new_global_ts=0, prev_adc8_ts=0, prev_adc16_ts=0, adc_diff=0;
 ULong64_t n_ebis_pulses = 0, n_info=0, n_adc =0, n_word=0, n_qlong=0, n_qshort=0, 
           n_finetime=0, n_traces=0, n_adc_ts=0, n_global_ts=0, n_processed_hits=0,
@@ -69,7 +68,7 @@ void treat_hit(ISSHit *hit, ULong64_t event_ts) {
     issentry.channel = hit->GetChannel();
     issentry.data_id = hit->GetDataID();
     issentry.adc_data = hit->GetConversion();
-    tree->Fill();
+    tree->Fill();   
 }
 
 //-----------------------------------------------------------------------------
@@ -85,8 +84,7 @@ void process_hits(UInt_t nhits, ULong64_t event_ts) {
    for (UInt_t i = 0; i < nhits; i++) treat_hit(&hits[i], event_ts);
 
    // Erase the hits that we just processed
-   hits.erase(hits.begin(), hits.begin() + nhits);
-    
+   hits.erase(hits.begin(), hits.begin() + nhits);  
    
    printf("Processed %llu hits from %llu/%llu buffers\r", n_processed_hits, nbuffer,
          total_buffer);
@@ -99,8 +97,9 @@ void process_hits(UInt_t nhits, ULong64_t event_ts) {
 // Treat a single word
 void treat_word(ISSWord *w) {
 
-    n_word++;   
-   
+    n_word++;
+    
+    // For info words get full timestamps
     if(w->IsInfo()) {
     
         n_info++;
@@ -111,9 +110,9 @@ void treat_word(ISSWord *w) {
         // write all previous hits to the event root tree and start a new event
         if (ID_EBIS == w->GetInfoModule()) {
         
-            // Process all hits
+            // Process all previous hits
             process_hits(hits.size(), last_global_ts); 
-                       
+        
             // Update the global timestamp (event timestamp)
             if (w->HasExtendedTimestamp()) {
                 new_global_ts = w->GetFullGlobalTimestamp();
@@ -124,7 +123,7 @@ void treat_word(ISSWord *w) {
             n_events++;
         }
         
-        // Else, update the ADC timestamp
+        // Else it's a V17XX module, update the full ADC timestamp
         else {
             if (w->HasExtendedTimestamp()) {
                 last_adc8_ts = w->GetFullADCTimestamp();
@@ -236,7 +235,6 @@ void make_tree(const Char_t *infile = "../../data/R20_0") {
     // Define more files here ( TODO: read file list from file or give as input)
     
     infile = "../../data/R21_0"; treat_file(infile);
-    /*
     infile = "../../data/R22_0"; treat_file(infile);
     infile = "../../data/R23_0"; treat_file(infile);
     infile = "../../data/R24_0"; treat_file(infile);
@@ -244,7 +242,7 @@ void make_tree(const Char_t *infile = "../../data/R20_0") {
     infile = "../../data/R26_0"; treat_file(infile);
     infile = "../../data/R27_0"; treat_file(infile);
     infile = "../../data/R28_0"; treat_file(infile);
-    */
+    
 
     // Get time difference between first and last global timestamp
     Double_t diff = (Double_t)(last_global_ts - first_global_ts);

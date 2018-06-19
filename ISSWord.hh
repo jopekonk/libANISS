@@ -2,6 +2,7 @@
 #define __ISS_WORD_HH__
 
 #define CAEN_V1495_MOD_ID 63
+#define CAEN_V1730_MOD_ID 2
 
 class ISSWord {
 
@@ -10,8 +11,8 @@ class ISSWord {
     ULong64_t last_global_ts;
     ULong64_t last_adc_ts;
     UInt_t ext_global_ts; // Global timestamp from logic unit CAEN V1495  (10 ns resolution)
-    UInt_t ext_adc_ts;    // ADC timestamp from ADC unit :    CAEN V1725 ( 8 ns resolution) 
-                          //                                    or V1730 (16 ns resolution)
+    UInt_t ext_adc_ts;    // ADC timestamp from ADC unit :    CAEN V1725  ( 8 ns resolution) 
+    UInt_t ext_adc16_ts;  //                                    or V1730  (16 ns resolution)
 
  public:
     
@@ -29,8 +30,12 @@ class ISSWord {
         word = _word;        
         if (HasExtendedTimestamp()) {
             UShort_t mod_id = GetInfoModule();
-            if (CAEN_V1495_MOD_ID == mod_id) ext_global_ts = GetInfoField();
-               else ext_adc_ts = GetInfoField();
+            // don't mix up ADC and logic unit timestamps!
+            if (CAEN_V1495_MOD_ID == mod_id) ext_global_ts = GetInfoField(); 
+            // NOTE: currently not used anywhere!
+            else if (CAEN_V1730_MOD_ID == mod_id) ext_adc16_ts = GetInfoField(); 
+            else ext_adc_ts = GetInfoField();
+               
         }
     };
 
