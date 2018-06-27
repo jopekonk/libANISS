@@ -20,7 +20,8 @@ class ISSWord {
     // Constructor
     ISSWord(ULong64_t _word = 0) {
         ext_global_ts = 0;
-        ext_adc_ts = 0;
+        ext_adc_ts    = 0;
+        ext_adc16_ts  = 0;
         Set(_word);
     };
 
@@ -46,14 +47,14 @@ class ISSWord {
     };
     
     //..........................................................................
-    // Get the key (this should always be 2 = TIMESTAMP)
-    inline UShort_t GetKey() {
+    // Get the key (For info items this should always be 2 = TIMESTAMP for ISS data)
+    inline UShort_t GetItemCode() {
         return((word >> 62) & 3);
     };
     
     //..........................................................................
-    // Is it a trace sample??
-    inline Bool_t IsSample() {
+    // Is it a trace sample?
+    inline Bool_t IsTrace() {
         return(((word >> 62) & 3) == 0);
     };
     
@@ -119,7 +120,7 @@ class ISSWord {
     };
     
     //..........................................................................
-    // Set the extended part of the adc timestamp
+    // Set the extended part of the ADC timestamp
     void SetADCExtendedTimestamp(UInt_t _ext_ts) {
         ext_adc_ts = _ext_ts;
     };
@@ -127,7 +128,7 @@ class ISSWord {
     //..........................................................................
     // Get the full global 48-bit timestamp 
     inline ULong64_t GetFullGlobalTimestamp() {
-        if (IsSample()) return(last_global_ts);
+        if (IsTrace()) return(last_global_ts);
         ULong64_t ts = (ULong64_t)ext_global_ts;
         ts <<= 28;
         ts |= (word & 0xFFFFFFF);
@@ -138,7 +139,7 @@ class ISSWord {
     //..........................................................................
     // Get the full ADC 48-bit timestamp 
     inline ULong64_t GetFullADCTimestamp() {
-        if (IsSample()) return(last_adc_ts);
+        if (IsTrace()) return(last_adc_ts);
         ULong64_t ts = (ULong64_t)ext_adc_ts;
         ts <<= 28;
         ts |= (word & 0xFFFFFFF);
@@ -183,13 +184,6 @@ class ISSWord {
     };
     
     //..........................................................................
-    // Get ID from ADC ( 28:24 mod number, 23:22 data ID, 21:16 channel, word 2)
-    inline UInt_t GetADCID() {
-        if (!IsADC()) return(0);
-        return((word >> 48) & 0xFFF);
-    };
-    
-    //..........................................................................
     // Get channel from ADC (bits 21:16, word 2)
     inline UInt_t GetADCChannel() {
         if (!IsADC()) return(0);
@@ -197,14 +191,7 @@ class ISSWord {
     };
     
     //..........................................................................
-    // Get baseline/energy bit
-    inline Bool_t GetADCBE() {
-        if (!IsADC()) return(0);
-        return((word >> 52) & 1);
-    };
-    
-    //..........................................................................
-    // Get module from ADC (bits 28:24, word 2)
+    // Get module number of the ADC datum (bits 28:24, word 2)
     inline UInt_t GetADCModule() {
         if (!IsADC()) return(0);
         return((word >> 56) & 0x1F);
@@ -214,7 +201,7 @@ class ISSWord {
     //..........................................................................
     // Get number of samples from trace header
     // The sample length defines the number of 14 bit sample data items 
-    // following and will be a multiple of 4.
+    // following the header and is a multiple of 4.
     inline UInt_t GetTraceNSamples() {
         if (!IsTraceHeader()) return(0);
         return((word >> 32) & 0xFFFF);
@@ -235,54 +222,40 @@ class ISSWord {
     };
     
     //..........................................................................
-    // Get baseline/energy bit (Not used at ISS?)
-    inline Bool_t GetTraceBE() {
-        if (!IsADC()) return(0);
-        return((word >> 52) & 1);
-    };
-    
-    //..........................................................................
     // Get module from trace header (5 bits 28:24, word 2)
     inline UInt_t GetTraceModule() {
         if (!IsTraceHeader()) return(0);
         return((word >> 56) & 0x1F);
     };
-
-    //..........................................................................
-    // Get trace/raw flag (Not used at ISS?)
-    inline UInt_t GetTraceRawFlag() {
-        if (!IsTraceHeader()) return(kFALSE);
-        return((word >> 52) & 1);
-    };
     
     //..........................................................................
     void Show(UInt_t level = 1) {
         const Char_t *keys[] = {"SAMPLE", "TRACE", "INFO", "ADC"};
-        const Char_t *infos[] = {"UNDEFINED", "Pile-up", "Pause", "Resume",
-            "TS", "WhiteRabbit", "Aida", "ExtTs", "ScanningTable",
-            "OverRange", "UnderRange", "Overflow", "Underflow", "TrigSeq",
-            "DataLink", "SHARC"};
-        UInt_t key = GetKey();
+        UInt_t key = GetItemCode();
         UInt_t code = GetInfoCode();
         if (level < 1) return;
-        printf("Word: 0x%016llX Timestamp: 0x%012llX Type: %-6s \t",
-                 word, GetFullADCTimestamp(), keys[key]);
+        if ( IsInfo() && CAEN_V1495_MOD_ID == GetInfoModule()) {
+        	printf("Word: 0x%016llX GlobalTimestamp: 0x%012llX Type: %-6s \t",
+            			     word, GetFullGlobalTimestamp(), keys[key]);
+        } else {
+        	printf("Word: 0x%016llX ADCTimestamp: 0x%012llX Type: %-6s \t",
+            			     word, GetFullADCTimestamp(), keys[key]);
+        } 
         switch(key) {
          case 0:
             break;
          case 1:
-            printf("Module: %d Channel: %-2d %c Nsamples: %d %s",
-                     GetTraceModule(), GetTraceChannel(), GetTraceBE() ? 'B' : 'E',
-                     GetTraceNSamples(), GetTraceRawFlag() ? "RAW" : "TRACE");
+            printf("Module: %d Channel: %d Nsamples: %d",
+                     GetTraceModule(), GetTraceChannel(), 
+                     GetTraceNSamples());
             break;
          case 2:
-            printf("Module: %d Code: %d %-8s Field: 0x%05X", GetInfoModule(),
-                     code, infos[code], GetInfoField());
+            printf("Module: %d Code: %d %d Field: 0x%05X", GetInfoModule(),
+                     code, GetItemCode(), GetInfoField());
             break;
          case 3:
-            printf("Module: %d Channel: %-2d %c Conversion: %4d",
-                     GetADCModule(), GetADCChannel(), GetADCBE() ? 'B' : 'E',
-                     GetADCConversion());
+            printf("Module: %d Channel: %d Conversion: %5d",
+                     GetADCModule(), GetADCChannel(), GetADCConversion());
             break;
         }
         printf("\n");
